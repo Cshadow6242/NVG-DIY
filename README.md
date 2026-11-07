@@ -16,29 +16,6 @@
 #include <Adafruit_SPITFT_Macros.h>
 #include <gfxfont.h>
 
-/*
- * =====================================================================
- *  DIY NVG (noktowizor) – ESP32-CAM (AI Thinker, ESP32-S) + OV7725 + GC9A01
- * =====================================================================
- *  - Start od razu po podaniu zasilania, bez WiFi i bez Bluetooth.
- *  - Obraz z kamery OV7725 (QVGA 320x240) -> wycięty środek 240x240
- *    -> okrągły ekran GC9A01 240x240 po SPI.
- *  - Ten sam kod dla obu oczu: zmień tylko EYE (EYE_LEFT / EYE_RIGHT).
- *
- *  Wymagania (Arduino IDE):
- *   1) Płytki: "esp32 by Espressif Systems" (2.0.x lub 3.x)
- *      Płytka: "AI Thinker ESP32-CAM"
- *   2) Biblioteka: "GFX Library for Arduino" (autor: Moon On Our Nation)
- *      Piny wpisane poniżej – NIE trzeba edytować plików biblioteki.
- *
- *  Połączenia ekranu GC9A01 -> ESP32-CAM:
- *   VCC -> 5V | GND -> GND | DIN -> IO13 | CLK -> IO14
- *   CS  -> IO15 | DC -> IO12 | RST -> IO2 | BL -> nie podłączony
- *
- *  Wgrywanie (FTDI232): IO0 -> GND, RESET, Upload, potem odłącz IO0 i RESET.
- * =====================================================================
- */
-
 #include <Arduino.h>
 #include "esp_camera.h"
 #include <Arduino_GFX_Library.h>
@@ -46,53 +23,44 @@
 #include "soc/soc.h"
 #include "soc/rtc_cntl_reg.h"
 
-// =====================================================================
-//  USTAWIENIA – zmieniaj tylko tutaj
-// =====================================================================
-
-// --- Które oko? ------------------------------------------------------
+// Which eye
 #define EYE_LEFT   0
 #define EYE_RIGHT  1
-#define EYE        EYE_LEFT   // <- zmień na EYE_LEFT albo EYE_RIGHT
+#define EYE        EYE_LEFT   // <- change EYE_LEFT or EYE_RIGHT
 
 #if EYE == EYE_LEFT
-  #define SCREEN_ROTATION 0   // obrót ekranu: 0=0°, 1=90°, 2=180°, 3=270°
-  #define MIRROR_X   0   // 1 = odbicie lustrzane w poziomie (lewo-prawo)
-  #define FLIP_Y     0   // 1 = odbicie w pionie (góra-dół)
+  #define SCREEN_ROTATION 0   // display rotation: 0=0°, 1=90°, 2=180°, 3=270°
+  #define MIRROR_X   0   // 1 = horizontal mirror reflection (left-right)
+  #define FLIP_Y     0   // 1 = vertical reflection (top-bottom)
 #else
-  #define SCREEN_ROTATION 0   // obrót ekranu: 0=0°, 1=90°, 2=180°, 3=270°
-  #define MIRROR_X   0   // 1 = odbicie lustrzane w poziomie (lewo-prawo)
-  #define FLIP_Y     0   // 1 = odbicie w pionie (góra-dół)
+  #define SCREEN_ROTATION 0   // display rotation: 0=0°, 1=90°, 2=180°, 3=270°
+  #define MIRROR_X   0   // 1 = horizontal mirror reflection (left-right)
+  #define FLIP_Y     0   // 1 = vertical reflection (top-bottom)
 #endif
 
-// --- Obraz -----------------------------------------------------------
-#define COLOR_MODE   0      // 0 = czarno-biały (najlepszy przy IR 850nm)
-                             // 1 = zielony "fosfor" jak w klasycznym NVG
-                             // 2 = oryginalne kolory z kamery
-#define NVG_BRIGHTNESS   0      // jasność programowa: -100 ... +100 (0 = bez zmian)
-#define NVG_CONTRAST     1.20f  // kontrast programowy: 0.50 ... 3.00 (1.00 = bez zmian)
-#define NVG_GAMMA        0.85f  // < 1.0 rozjaśnia cienie, > 1.0 przyciemnia (1.00 = bez zmian)
+// image
+#define COLOR_MODE   0      // 0 = black and white
+                             // 1 = green "phosphor"
+                             // 2 = original colors from the camera
+#define NVG_BRIGHTNESS   0      // program brightness: -100 ... +100 (0 = no change)
+#define NVG_CONTRAST     1.20f  // program contrast: 0.50 ... 3.00 (1.00 = no change)
+#define NVG_GAMMA        0.85f  // < 1.0 brightens shadows, > 1.0 darkens them (1.00 = no change)
 
-// --- Diagnostyka -----------------------------------------------------
-#define SHOW_FPS     1      // 1 = licznik FPS na ekranie i w Serial Monitor, 0 = wyłączony
+#define SHOW_FPS     1      // 1 = FPS counter on screen and in Serial Monitor, 0 = disabled
 
-// --- Sprzęt ----------------------------------------------------------
-#define TFT_SPI_FREQ          40000000UL  // 40 MHz = stabilnie, 80 MHz = szybciej (krótkie przewody!)
-#define CAM_XCLK_FREQ     20000000      // zegar kamery 20 MHz (przy problemach spróbuj 10000000)
-#define DISABLE_BROWNOUT  1             // 1 = wyłącz reset przy chwilowym spadku napięcia
+// Equipment
+#define TFT_SPI_FREQ          40000000UL  // 40 MHz = stable, 80 MHz = fast (short wires!)
+#define CAM_XCLK_FREQ     20000000      // camera clock 20 MHz (try 10000000 if you encounter issues)
+#define DISABLE_BROWNOUT  1             // 1 = disable reset during a momentary voltage drop
 
-// =====================================================================
-//  PINY – zgodne ze schematem z filmu
-// =====================================================================
-
-// Ekran GC9A01 (SPI)
+// Display GC9A01 (SPI)
 #define TFT_MOSI  13   // DIN
 #define TFT_SCLK  14   // CLK
 #define TFT_CS    15   // CS
 #define TFT_DC    12   // DC
 #define TFT_RST    2   // RST
 
-// Kamera – standardowe piny modułu AI Thinker ESP32-CAM
+// Camera
 #define PWDN_GPIO_NUM     32
 #define RESET_GPIO_NUM    -1
 #define XCLK_GPIO_NUM      0
@@ -110,11 +78,9 @@
 #define HREF_GPIO_NUM     23
 #define PCLK_GPIO_NUM     22
 
-#define FLASH_LED_PIN      4   // biała dioda na płytce – trzymamy wyłączoną
+#define FLASH_LED_PIN      4   
 
-// =====================================================================
-//  Kolory (RGB565) i bufory
-// =====================================================================
+//  Colors (RGB565) and buffers
 #define C_BLACK  0x0000
 #define C_WHITE  0xFFFF
 #define C_RED    0xF800
@@ -128,22 +94,20 @@
 Arduino_DataBus *bus = new Arduino_ESP32SPI(TFT_DC, TFT_CS, TFT_SCLK, TFT_MOSI, GFX_NOT_DEFINED);
 Arduino_GFX *gfx = new Arduino_GC9A01(bus, TFT_RST, SCREEN_ROTATION, true /* IPS */);
 
-static uint16_t lut[256];                         // jasność (0..255) -> kolor RGB565
-static uint16_t lineBuf[SCREEN_W * BAND_LINES];   // bufor pasa linii
+static uint16_t lut[256];                         // brightness (0..255) -> RGB565 color
+static uint16_t lineBuf[SCREEN_W * BAND_LINES];   // line buffer
 
 static uint32_t fpsTimer = 0;
 static uint16_t fpsFrames = 0;
 static uint16_t fpsValue = 0;
 static uint16_t fbFailCount = 0;
 
-// =====================================================================
-//  Pomocnicze
-// =====================================================================
+//  Auxiliary
 static inline uint16_t rgb565(uint8_t r, uint8_t g, uint8_t bl) {
   return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (bl >> 3);
 }
 
-// Tablica: jasność -> kolor (kontrast, jasność, gamma, tryb koloru)
+// Display: brightness -> color (contrast, brightness, gamma, color mode)
 void buildLut() {
   for (int i = 0; i < 256; i++) {
     float v = i / 255.0f;
@@ -153,9 +117,9 @@ void buildLut() {
     v = powf(v, NVG_GAMMA);
     uint8_t g = (uint8_t)(v * 255.0f + 0.5f);
 #if COLOR_MODE == 1
-    lut[i] = rgb565(g / 5, g, g / 4);   // zielony fosfor
+    lut[i] = rgb565(g / 5, g, g / 4);   // green
 #else
-    lut[i] = rgb565(g, g, g);           // czarno-biały
+    lut[i] = rgb565(g, g, g);           // black and white
 #endif
   }
 }
@@ -174,7 +138,7 @@ void showMessage(const char *line1, const char *line2, const char *line3, uint16
   gfx->println(line3);
 }
 
-// Próba uruchomienia kamery w danym formacie
+// Attempt to initialize the camera in a given format
 bool tryCameraInit(pixformat_t format, int xclk) {
   camera_config_t config = {};
   config.ledc_channel = LEDC_CHANNEL_0;
@@ -197,7 +161,7 @@ bool tryCameraInit(pixformat_t format, int xclk) {
   config.pin_reset    = RESET_GPIO_NUM;
   config.xclk_freq_hz = xclk;
   config.pixel_format = format;
-  config.frame_size   = FRAMESIZE_QVGA;   // 320x240 – OV7725 obsługuje max VGA
+  config.frame_size   = FRAMESIZE_QVGA;   // 320x240 – OV7725 supports max VGA
   config.jpeg_quality = 12;
   config.grab_mode    = CAMERA_GRAB_LATEST;
 
@@ -219,7 +183,7 @@ bool tryCameraInit(pixformat_t format, int xclk) {
 }
 
 bool initCamera() {
-  // Kolejność prób: RGB565 -> GRAYSCALE -> wolniejszy zegar
+  // Order of trials: RGB565 -> GRAYSCALE -> faster clock
   if (tryCameraInit(PIXFORMAT_RGB565, CAM_XCLK_FREQ)) return true;
   delay(100);
   if (tryCameraInit(PIXFORMAT_GRAYSCALE, CAM_XCLK_FREQ)) return true;
@@ -233,24 +197,22 @@ void setupSensor() {
   if (!s) return;
   Serial.printf("[KAMERA] PID czujnika: 0x%02X %s\n", s->id.PID,
                 s->id.PID == 0x77 ? "(OV7725)" : "(inny czujnik – kod nadal powinien działać)");
-  // Automatyka ekspozycji i wzmocnienia – ważne w nocy przy oświetlaczu IR
+  
   if (s->set_exposure_ctrl) s->set_exposure_ctrl(s, 1);
   if (s->set_gain_ctrl)     s->set_gain_ctrl(s, 1);
   if (s->set_whitebal)      s->set_whitebal(s, 1);
-  // Odbicia robimy programowo (MIRROR_X / FLIP_Y), więc czujnik zostaje bez odbić
+  
   if (s->set_hmirror)       s->set_hmirror(s, 0);
   if (s->set_vflip)         s->set_vflip(s, 0);
 }
 
-// =====================================================================
-//  SETUP – uruchamia się od razu po podaniu zasilania
-// =====================================================================
+//  SETUP – starts up immediately upon power-up
 void setup() {
 #if DISABLE_BROWNOUT
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
 #endif
 
-  // Radio całkowicie wyłączone – brak WiFi i Bluetooth
+  // Radio completely turned off – no WiFi or Bluetooth
   WiFi.mode(WIFI_OFF);
   btStop();
 
@@ -262,14 +224,12 @@ void setup() {
   Serial.println("=== DIY NVG start ===");
   Serial.printf("Oko: %s | PSRAM: %s\n", EYE == EYE_LEFT ? "LEWE" : "PRAWE", psramFound() ? "TAK" : "NIE");
 
-  // Najpierw ekran – żeby móc pokazać ewentualny błąd kamery
   if (!gfx->begin(TFT_SPI_FREQ)) {
     Serial.println("[EKRAN] gfx->begin() nieudany – sprawdź połączenia ekranu");
   }
   gfx->fillScreen(C_BLACK);
   buildLut();
 
-  // Kamera – jeśli nie wystartuje, komunikat i ponowna próba co 3 s
   while (!initCamera()) {
     Serial.println("[KAMERA] Camera init failed – sprawdź taśmę kamery i zasilanie 5V");
     showMessage("BLAD KAMERY", "Sprawdz tasme OV7725", "i zasilanie 5V (min. 1A)", C_RED);
@@ -277,7 +237,7 @@ void setup() {
   }
   setupSensor();
 
-  // Pierwsze klatki po starcie bywają ciemne – pomijamy kilka
+  // The first few frames after startup can be dark – we skip a few
   for (int i = 0; i < 3; i++) {
     camera_fb_t *fb = esp_camera_fb_get();
     if (fb) esp_camera_fb_return(fb);
@@ -287,9 +247,7 @@ void setup() {
   fpsTimer = millis();
 }
 
-// =====================================================================
-//  LOOP – klatka z kamery -> ekran
-// =====================================================================
+//  LOOP – camera frame -> screen
 void loop() {
   camera_fb_t *fb = esp_camera_fb_get();
   if (!fb) {
@@ -309,7 +267,7 @@ void loop() {
   const bool gray = (fb->format == PIXFORMAT_GRAYSCALE);
   const int bpp = gray ? 1 : 2;
 
-  // Wycinamy środek obrazu o rozmiarze ekranu
+  // We cut out the center of the image, matching the screen size
   const int outW = W < SCREEN_W ? W : SCREEN_W;
   const int outH = H < SCREEN_H ? H : SCREEN_H;
   const int srcX0 = (W - outW) / 2;
@@ -317,7 +275,7 @@ void loop() {
   const int dstX0 = (SCREEN_W - outW) / 2;
   const int dstY0 = (SCREEN_H - outH) / 2;
 
-  // Zabezpieczenie przed niepełną klatką
+  // Protection against incomplete frames
   if (fb->len < (size_t)(W * H * bpp)) {
     esp_camera_fb_return(fb);
     return;
